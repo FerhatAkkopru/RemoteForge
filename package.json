@@ -1,0 +1,75 @@
+{
+  "name": "remoteforge",
+  "displayName": "RemoteForge",
+  "description": "Lightweight SSH/SFTP remote file editor with conflict detection, sync control, and transparent logging",
+  "version": "1.0.0",
+  "publisher": "your-publisher-name",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": ["Other"],
+  "keywords": ["ssh", "sftp", "remote", "file", "editor", "sync"],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onFileSystem:remoteforge"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "remoteforge.connect",
+        "title": "RemoteForge: Connect to Server"
+      },
+      {
+        "command": "remoteforge.disconnect",
+        "title": "RemoteForge: Disconnect"
+      },
+      {
+        "command": "remoteforge.addProfile",
+        "title": "RemoteForge: Add Server Profile"
+      },
+      {
+        "command": "remoteforge.deleteProfile",
+        "title": "RemoteForge: Delete Server Profile"
+      },
+      {
+        "command": "remoteforge.pushChanges",
+        "title": "RemoteForge: Push Pending Changes"
+      },
+      {
+        "command": "remoteforge.showLog",
+        "title": "RemoteForge: Show Log"
+      }
+    ],
+    "configuration": {
+      "title": "RemoteForge",
+      "properties": {
+        "remoteforge.syncMode": {
+          "type": "string",
+          "enum": ["auto", "manual"],
+          "default": "auto",
+          "description": "Sync mode: 'auto' writes to server immediately on save, 'manual' queues changes until you push them."
+        }
+      }
+    }
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "@types/ssh2": "^1.15.5",
+    "@types/vscode": "^1.125.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "ssh2@1.17.0": true,
+    "cpu-features@0.0.10": true
+  },
+  "scripts": {
+    "compile": "node esbuild.js",
+    "watch": "node esbuild.js --watch"
+  },
+  "dependencies": {
+    "ssh2": "^1.17.0"
+  }
+}
