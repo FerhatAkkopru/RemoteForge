@@ -75,7 +75,8 @@
   },
   "scripts": {
     "compile": "node esbuild.js",
-    "watch": "node esbuild.js --watch"
+    "watch": "node esbuild.js --watch",
+    "test": "node --experimental-strip-types --test test/**/*.test.ts"
   },
   "dependencies": {
     "ssh2": "^1.17.0"

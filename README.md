@@ -40,8 +40,7 @@ VS Code Explorer ──> RemoteFileSystemProvider ──> Smart Stat Cache ─�
 
 2. Compile the extension:
    ```bash
-   node ./node_modules/.bin/tsc
-   node esbuild.js
+   npm run compile
    ```
 
 3. Open the project in VS Code and press **`F5`** to launch the Extension Development Host.
@@ -101,8 +100,7 @@ VS Code Explorer ──> RemoteFileSystemProvider ──> Smart Stat Cache ─�
 
 2. Projeyi derleyin:
    ```bash
-   node ./node_modules/.bin/tsc
-   node esbuild.js
+   npm run compile
    ```
 
 3. VS Code'da projeyi açıp **`F5`** tuşuna basarak eklentiyi çalıştırın.
