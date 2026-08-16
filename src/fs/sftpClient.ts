@@ -10,7 +10,7 @@ interface CacheEntry<T> {
     timestamp: number;
 }
 
-const CACHE_TTL_MS = 5000; // 5 seconds cache
+const CACHE_TTL_MS = 30_000; // 30 seconds — long enough to survive Explorer folder switching
 
 export class SftpClient {
     private logger = Logger.getInstance();

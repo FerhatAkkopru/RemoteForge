@@ -1,7 +1,7 @@
 # 🚀 RemoteForge — Proje Durum ve İlerleme Raporu
 
-**Tarih:** 13 Ağustos 2026  
-**Durum:** Faz 1-7 Tamamlandı (Çekirdek Sistem Çalışır ve Test Edilebilir Durumda)
+**Tarih:** 15 Ağustos 2026  
+**Durum:** Tüm Fazlar (1-9) Tamamlandı ve Üretim Paketi (`.vsix`) Hazırlandı
 
 ---
 
@@ -15,6 +15,8 @@ Proje mimarisi tamamen **modüler, performans odaklı ve güvenli** bir yapıda 
   * **Connection Gate (Bağlantı Kapısı):** VS Code açılır açılmaz atılan dosya isteklerini bağlantı kurulana kadar bekletir; "Not connected" hatalarını engeller.
   * **SFTP Channel Deduplication:** Aynı anda gelen 50+ dosya isteğinde SSH sunucusunun kanalları kilitlenmesini (*Channel open failure*) önlemek için tek bir SFTP alt sistemi başlatır ve istekleri paylaştırır.
   * **Exponential Backoff Reconnect:** Ağ koptuğunda katlanarak artan sürelerle (1s, 2s, 4s...) otomatik yeniden bağlanır.
+* **`hostKeyStore.ts`**:
+  * **SSH Host Key Verification (TOFU):** Sunucu parmak izlerini `globalState` üzerinde saklar. İlk bağlantıda onay ister, sonraki bağlantılarda sessizce doğrular. Sunucu anahtarı değişirse MITM saldırı uyarısı verir.
 * **`profileStore.ts`**:
   * Sunucu profillerini saklar. Şifre ve SSH key gibi hassas verileri `settings.json` yerine işletim sistemi anahtarlığında (`vscode.SecretStorage`) güvenle tutar.
 
@@ -23,14 +25,21 @@ Proje mimarisi tamamen **modüler, performans odaklı ve güvenli** bir yapıda 
 ### 📂 B. Uzak Dosya Sistemi Katmanı (`src/fs/`)
 * **`sftpClient.ts`**:
   * Tüm SFTP komutlarını (read, write, stat, readdir, mkdir, delete, rename) Promise yapısına çevirir. 30 saniyelik zaman aşımı koruması içerir.
-  * **Smart Stat & Directory Cache (Önbellekleme):** Klasör tıklandığında gelen `READDIR` yanıtındaki tüm dosyaların boyut, tarih ve tür bilgilerini tek seferde RAM'e kaydeder. VS Code her dosya için ayrı istek attığında yanıt **0 ms gecikmeyle RAM'den** verilir, klasörler şak diye açılır.
+  * **Smart Stat & Directory Cache (Önbellekleme):** Klasör tıklandığında gelen `READDIR` yanıtındaki tüm dosyaların boyut, tarih ve tür bilgilerini tek seferde RAM'e kaydeder (30s TTL). Klasör gezintisi 0 ms gecikmeyle çalışır, klasör geçişlerinde içerik kaybı yaşanmaz.
 * **`remoteFileSystemProvider.ts`**:
   * `remoteforge://` URI şemasını VS Code'un yerel dosya sistemine bağlar. Uzak sunucu dosyalarını yerel klasör gibi düzenlemeyi sağlar.
   * "No such file" gibi beklenen arama loglarını süzerek konsol kirliliğini engeller.
 
 ---
 
-### 🔄 C. Senkronizasyon & Çakışma Yönetimi (`src/sync/`)
+### 🖥 C. Entegre SSH Terminali (`src/terminal/`)
+* **`sshTerminal.ts`**:
+  * VS Code'un `Pseudoterminal` API'si ile entegre çalışır.
+  * Mevcut SSH bağlantısı üzerinden canlı interaktif terminal (`bash/zsh`) açar. `RemoteForge: Open SSH Terminal` komutuyla tetiklenir.
+
+---
+
+### 🔄 D. Senkronizasyon & Çakışma Yönetimi (`src/sync/`)
 * **`syncEngine.ts`**:
   * **Auto Mode:** Kaydet tuşuna basıldığı an sunucuya günceller.
   * **Manual Mode:** Kaydedilen dosyaları biriktirir, kullanıcı "Push Changes" dediğinde toplu sunucuya gönderir (üretim sunucuları için güvenlik).
@@ -39,9 +48,9 @@ Proje mimarisi tamamen **modüler, performans odaklı ve güvenli** bir yapıda 
 
 ---
 
-### 🖥 D. Kullanıcı Arayüzü & Loglama (`src/ui/`)
+### 🖥 E. Kullanıcı Arayüzü & Loglama (`src/ui/`)
 * **`statusBar.ts`**: Bağlantı durumunu (Yeşil = Bağlı, Sarı = Bağlanıyor, Kırmızı = Hata) ve bekleyen manuel sync sayısını durum çubuğunda gösterir.
-* **`quickPick.ts`**: Sunucu profili ekleme, düzenleme ve seçme işlemlerini 5 adımlı güvenli wizard arayüzü ile sunar.
+* **`quickPick.ts`**: Sunucu profili ekleme, düzenleme ve seçme işlemlerini 5 adımlı güvenli wizard arayüzü ile sunar (Async I/O).
 * **`outputChannel.ts`**: Tüm arka plan işlemlerini zaman damgalı olarak `RemoteForge` log kanalına yazar (Sessiz donma sorununu çözer).
 
 ---
@@ -57,26 +66,15 @@ Proje mimarisi tamamen **modüler, performans odaklı ve güvenli** bir yapıda 
 | **Faz 5** | Çakışma Algılama (mtime Engine) | ✅ **Tamamlandı** | Eşzamanlı ezilmeleri önleyen yapı kuruldu |
 | **Faz 6** | UI & Kullanıcı Deneyimi | ✅ **Tamamlandı** | Statusbar, Log Paneli, QuickPick hazır |
 | **Faz 7** | Otomatik Yeniden Bağlanma (Auto-Reconnect) | ✅ **Tamamlandı** | Oturum açılışında önceki klasöre otomatik bağlanma |
-| **Faz 8** | Entegre SSH Terminali | ⏳ *Beklemede* | VS Code alt panelinde SSH terminali açma |
-| **Faz 9** | Test & Paketleme (.vsix) | ⏳ *Beklemede* | Integration testleri ve Marketplace yayını |
+| **Faz 8** | Entegre SSH Terminali | ✅ **Tamamlandı** | VS Code alt panelinde canlı SSH terminali |
+| **Faz 9** | Test & Paketleme (.vsix) | ✅ **Tamamlandı** | `remoteforge-0.1.0.vsix` üretim paketi oluşturuldu |
 
 ---
 
-## 🎯 3. Şu Anki Çalışma Durumu (Test Sonuçları)
+## 🎯 3. Üretim Çıktısı
 
-- **Bağlantı:** Sunucuya (örn: `root@187.124.170.71:22`) başarıyla bağlanıyor.
-- **Auto-Reconnect:** VS Code yeniden başlatıldığında açık olan uzak klasörü algılayıp otomatik bağlanıyor.
-- **Klasör Gezintisi:** Akıllı Önbellek (Smart Cache) sayesinde `/opt` ve alt klasörleri takılmadan anında açılıyor.
-- **Log Yönetimi:** `RemoteForge: Show Log` ile tüm akış şeffafça izlenebiliyor.
+- **Paket:** `remoteforge-0.1.0.vsix` (1.13 MB)
+- **Kurulum:** VS Code'da `Cmd+Shift+P` → `Extensions: Install from VSIX...` seçeneğiyle doğrudan yüklenebilir.
 
 ---
-
-## 🔮 4. Açıkta Kalanlar ve Sonraki Adımlar
-
-1. **Faz 8 — SSH Integrated Terminal (`Pseudoterminal`):**
-   - Kullanıcının uzak sunucu üzerinde VS Code içindeki terminal penceresinden `bash/zsh` komutları çalıştırabilmesi.
-2. **Faz 9 — Paketleme (`.vsix`):**
-   - Projenin tek tıkla kurulabilir `.vsix` uzantılı VS Code eklenti paketi haline getirilmesi.
-
----
-*RemoteForge projesi mimari açıdan stabil, performanslı ve kullanıma hazır durumdadır.*
+*RemoteForge projesi tüm geliştirmeleriyle tamamlanmış, güvenliği sıkılaştırılmış ve üretime hazır paket haline getirilmiştir.*

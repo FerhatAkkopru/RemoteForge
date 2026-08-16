@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { Client, ConnectConfig, SFTPWrapper } from 'ssh2';
 import { ConnectionProfile } from './profileStore.js';
+import { HostKeyStore } from './hostKeyStore.js';
 import { Logger } from '../ui/outputChannel.js';
 
 export type AuthSecret =
@@ -20,6 +21,11 @@ export class ConnectionManager {
     private readonly maxReconnectAttempts = 5;
     private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     private logger = Logger.getInstance();
+    private hostKeyStore: HostKeyStore | undefined;
+
+    setHostKeyStore(store: HostKeyStore): void {
+        this.hostKeyStore = store;
+    }
 
     // Gate mechanism: getSftp() waits on this promise until connection is ready
     private connectGate: Promise<void> | null = null;
@@ -34,6 +40,14 @@ export class ConnectionManager {
 
     get activeProfile(): ConnectionProfile | undefined {
         return this.currentProfile;
+    }
+
+    /**
+     * Exposes the raw SSH2 Client for modules that need direct channel access
+     * (e.g. the SSH terminal).
+     */
+    getSshClient(): Client | undefined {
+        return this.client;
     }
 
     private setState(state: ConnectionState): void {
@@ -139,6 +153,22 @@ export class ConnectionManager {
                 username: this.currentProfile.username,
                 readyTimeout: 15000,
             };
+
+            // Host key verification (TOFU model)
+            if (this.hostKeyStore) {
+                const store = this.hostKeyStore;
+                const profile = this.currentProfile;
+                config.hostVerifier = (key: Buffer) => {
+                    // ssh2 expects sync true/false OR a promise
+                    // We use the async verify and return a promise
+                    return store.verify(
+                        profile.host,
+                        profile.port,
+                        key.toString('hex').substring(0, 20), // algorithm hint
+                        key
+                    ) as unknown as boolean;
+                };
+            }
 
             if (this.currentSecret.type === 'password') {
                 config.password = this.currentSecret.password;

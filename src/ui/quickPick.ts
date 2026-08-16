@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
+import * as fsSync from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { ConnectionProfile, ProfileStore } from '../connection/profileStore.js';
@@ -78,16 +79,16 @@ export async function showAddProfileDialog(
         const keyPath = await vscode.window.showInputBox({
             title: 'RemoteForge: SSH Key Path',
             prompt: 'Path to your private key file',
-            value: fs.existsSync(defaultKeyPath) ? defaultKeyPath : '',
+            value: fsSync.existsSync(defaultKeyPath) ? defaultKeyPath : '',
             validateInput: (v) => {
                 if (!v.trim()) { return 'Key path cannot be empty'; }
-                if (!fs.existsSync(v)) { return 'File does not exist'; }
+                if (!fsSync.existsSync(v)) { return 'File does not exist'; }
                 return undefined;
             },
         });
         if (!keyPath) { return undefined; }
 
-        const privateKey = fs.readFileSync(keyPath, 'utf-8');
+        const privateKey = await fs.readFile(keyPath, 'utf-8');
 
         const passphrase = await vscode.window.showInputBox({
             title: 'RemoteForge: Key Passphrase',

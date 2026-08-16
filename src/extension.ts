@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { ConnectionManager } from './connection/connectionManager.js';
+import { HostKeyStore } from './connection/hostKeyStore.js';
 import { ConnectionProfile, ProfileStore } from './connection/profileStore.js';
 import { SftpClient } from './fs/sftpClient.js';
 import { RemoteFileSystemProvider } from './fs/remoteFileSystemProvider.js';
@@ -8,6 +9,7 @@ import { ConflictDetector } from './sync/conflictDetector.js';
 import { Logger } from './ui/outputChannel.js';
 import { StatusBar } from './ui/statusBar.js';
 import { showAddProfileDialog, showProfilePicker } from './ui/quickPick.js';
+import { SshTerminalProvider } from './terminal/sshTerminal.js';
 
 export function activate(context: vscode.ExtensionContext) {
     const logger = Logger.getInstance();
@@ -16,6 +18,8 @@ export function activate(context: vscode.ExtensionContext) {
     // --- Core services ---
     const profileStore = new ProfileStore(context);
     const connectionManager = new ConnectionManager();
+    const hostKeyStore = new HostKeyStore(context.globalState);
+    connectionManager.setHostKeyStore(hostKeyStore);
     const sftpClient = new SftpClient(connectionManager);
     const conflictDetector = new ConflictDetector(sftpClient);
     const syncEngine = new SyncEngine(sftpClient, conflictDetector);
@@ -181,6 +185,25 @@ export function activate(context: vscode.ExtensionContext) {
         logger.show();
     });
 
+    // Open SSH Terminal
+    const openTerminalCmd = vscode.commands.registerCommand('remoteforge.openTerminal', () => {
+        if (connectionManager.state !== 'connected') {
+            void vscode.window.showWarningMessage(
+                'RemoteForge: Not connected. Connect to a server first.'
+            );
+            return;
+        }
+
+        const profile = connectionManager.activeProfile;
+        const label = profile ? `${profile.label}` : 'Remote';
+        const pty = new SshTerminalProvider(connectionManager);
+        const terminal = vscode.window.createTerminal({
+            name: `RemoteForge: ${label}`,
+            pty,
+        });
+        terminal.show();
+    });
+
     // --- Register disposables ---
     context.subscriptions.push(
         connectCmd,
@@ -189,6 +212,7 @@ export function activate(context: vscode.ExtensionContext) {
         deleteProfileCmd,
         pushChangesCmd,
         showLogCmd,
+        openTerminalCmd,
         statusBar,
         connectionManager,
         fsProvider,
