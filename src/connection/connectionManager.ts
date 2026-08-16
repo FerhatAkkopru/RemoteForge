@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { Client, ConnectConfig, SFTPWrapper } from 'ssh2';
+import { Client, ConnectConfig, SFTPWrapper, HostVerifier } from 'ssh2';
 import { ConnectionProfile } from './profileStore.js';
 import { HostKeyStore } from './hostKeyStore.js';
 import { Logger } from '../ui/outputChannel.js';
@@ -154,20 +154,19 @@ export class ConnectionManager {
                 readyTimeout: 15000,
             };
 
-            // Host key verification (TOFU model)
+            // Host key verification (TOFU model — async callback pattern)
             if (this.hostKeyStore) {
                 const store = this.hostKeyStore;
                 const profile = this.currentProfile;
-                config.hostVerifier = (key: Buffer) => {
-                    // ssh2 expects sync true/false OR a promise
-                    // We use the async verify and return a promise
-                    return store.verify(
+                config.hostVerifier = ((key: Buffer, verify: (valid: boolean) => void) => {
+                    store.verify(
                         profile.host,
                         profile.port,
                         key.toString('hex').substring(0, 20), // algorithm hint
                         key
-                    ) as unknown as boolean;
-                };
+                    ).then((valid) => verify(valid))
+                     .catch(() => verify(false));
+                }) as HostVerifier;
             }
 
             if (this.currentSecret.type === 'password') {
