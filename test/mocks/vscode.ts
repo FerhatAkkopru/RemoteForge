@@ -33,12 +33,20 @@ export class EventEmitter<T = any> {
     dispose() {}
 }
 
+export const commands = {
+    executeCommand: async (_command: string, ..._args: any[]) => undefined,
+};
+
 export const workspace = {
     configStore: new Map<string, any>(),
     getConfiguration: (_section?: string) => ({
         get: <T>(key: string, defaultValue: T): T => {
             return workspace.configStore.has(key) ? workspace.configStore.get(key) : defaultValue;
         },
+    }),
+    openTextDocument: async (options: { content?: string }) => ({
+        uri: Uri.parse('untitled:temp-draft'),
+        getText: () => options.content || '',
     }),
 };
 

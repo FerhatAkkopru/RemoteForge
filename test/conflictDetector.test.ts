@@ -57,4 +57,27 @@ describe('ConflictDetector Unit Tests', () => {
         const res = await detector.checkConflict(uri, '/file.txt');
         assert.equal(res, ConflictResolution.Cancel);
     });
+
+    it('should open diff view and re-prompt user when Compare Differences is selected', async () => {
+        const fakeSftp = { getMtime: async () => 1700000005000 };
+        let promptCallCount = 0;
+
+        const fakePrompter = async () => {
+            promptCallCount++;
+            if (promptCallCount === 1) {
+                return 'Compare Differences';
+            }
+            return 'Overwrite Remote';
+        };
+
+        const detector = new ConflictDetector(fakeSftp, fakePrompter);
+        const uri = mockUri('/file.txt');
+        detector.recordMtime(uri, 1700000000000);
+
+        const localContent = new TextEncoder().encode('Draft edits');
+        const res = await detector.checkConflict(uri, '/file.txt', localContent);
+
+        assert.equal(promptCallCount, 2, 'Should prompt once for Compare Differences, then re-prompt for final decision');
+        assert.equal(res, ConflictResolution.Overwrite);
+    });
 });

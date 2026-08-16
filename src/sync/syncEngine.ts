@@ -66,7 +66,7 @@ export class SyncEngine {
         remotePath: string,
         content: Uint8Array,
     ): Promise<boolean> {
-        const resolution = await this.conflictDetector.checkConflict(uri, remotePath);
+        const resolution = await this.conflictDetector.checkConflict(uri, remotePath, content);
 
         switch (resolution) {
             case ConflictResolution.Overwrite:

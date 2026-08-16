@@ -180,6 +180,10 @@ export class ConnectionManager {
         });
     }
 
+    static computeBackoffDelay(attempt: number): number {
+        return Math.min(1000 * Math.pow(2, attempt - 1), 30000);
+    }
+
     private attemptReconnect(): void {
         if (!this.currentProfile || !this.currentSecret) { return; }
         if (this.reconnectAttempts >= this.maxReconnectAttempts) {
@@ -198,7 +202,7 @@ export class ConnectionManager {
         }
 
         this.reconnectAttempts++;
-        const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), 30000);
+        const delay = ConnectionManager.computeBackoffDelay(this.reconnectAttempts);
         this.logger.info(
             `Reconnecting in ${delay / 1000}s (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...`
         );

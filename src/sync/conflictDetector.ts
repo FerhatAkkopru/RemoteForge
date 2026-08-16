@@ -29,7 +29,11 @@ export class ConflictDetector {
         this.knownMtimes.set(uri.toString(), mtime);
     }
 
-    async checkConflict(uri: vscode.Uri, remotePath: string): Promise<ConflictResolution> {
+    async checkConflict(
+        uri: vscode.Uri,
+        remotePath: string,
+        localContent?: Uint8Array,
+    ): Promise<ConflictResolution> {
         const knownMtime = this.knownMtimes.get(uri.toString());
         if (knownMtime === undefined) {
             return ConflictResolution.Overwrite;
@@ -62,15 +66,23 @@ export class ConflictDetector {
                 : 'Overwrite Remote';
 
             if (choice === 'Compare Differences') {
-                if (typeof vscode !== 'undefined' && vscode.commands) {
-                    // Open side-by-side diff view comparing current URI with remote URI
-                    void vscode.commands.executeCommand(
-                        'vscode.diff',
-                        uri,
-                        uri,
-                        `Conflict Diff: ${remotePath} (Local vs Remote)`
-                    );
+                if (typeof vscode !== 'undefined' && vscode.workspace && vscode.commands) {
+                    try {
+                        const text = localContent ? new TextDecoder().decode(localContent) : '';
+                        const localDoc = await vscode.workspace.openTextDocument({
+                            content: text,
+                        });
+                        await vscode.commands.executeCommand(
+                            'vscode.diff',
+                            localDoc.uri,
+                            uri,
+                            `Conflict: Local Draft ↔ Remote (${remotePath})`
+                        );
+                    } catch (diffErr) {
+                        this.logger.error('Failed to open diff view', diffErr);
+                    }
                 }
+
                 // Re-prompt user after opening diff view
                 choice = showWarning
                     ? await showWarning(
