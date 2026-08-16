@@ -2,10 +2,12 @@ import * as vscode from 'vscode';
 
 export class Logger {
     private static instance: Logger;
-    private outputChannel: vscode.OutputChannel;
+    private outputChannel?: vscode.OutputChannel;
 
     private constructor() {
-        this.outputChannel = vscode.window.createOutputChannel('RemoteForge');
+        if (typeof vscode !== 'undefined' && vscode?.window?.createOutputChannel) {
+            this.outputChannel = vscode.window.createOutputChannel('RemoteForge');
+        }
     }
 
     static getInstance(): Logger {
@@ -24,11 +26,11 @@ export class Logger {
     }
 
     info(message: string): void {
-        this.outputChannel.appendLine(`[${this.timestamp()}] [INFO] ${message}`);
+        this.outputChannel?.appendLine(`[${this.timestamp()}] [INFO] ${message}`);
     }
 
     warn(message: string): void {
-        this.outputChannel.appendLine(`[${this.timestamp()}] [WARN] ${message}`);
+        this.outputChannel?.appendLine(`[${this.timestamp()}] [WARN] ${message}`);
     }
 
     error(message: string, err?: unknown): void {
@@ -36,14 +38,14 @@ export class Logger {
         const line = errorMsg
             ? `[${this.timestamp()}] [ERROR] ${message}: ${errorMsg}`
             : `[${this.timestamp()}] [ERROR] ${message}`;
-        this.outputChannel.appendLine(line);
+        this.outputChannel?.appendLine(line);
     }
 
     show(): void {
-        this.outputChannel.show(true);
+        this.outputChannel?.show(true);
     }
 
     dispose(): void {
-        this.outputChannel.dispose();
+        this.outputChannel?.dispose();
     }
 }

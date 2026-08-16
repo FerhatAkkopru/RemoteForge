@@ -1,26 +1,60 @@
+import './setup.ts';
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { ConflictDetector, ConflictResolution } from '../src/sync/conflictDetector.ts';
 
-// Simple mock for Uri to avoid full VS Code runtime dependency in unit tests
 const mockUri = (path: string) => ({
     toString: () => `remoteforge://profile1${path}`,
     path,
 } as any);
 
-describe('ConflictDetector Logic Tests', () => {
-    it('should grant Overwrite if mtime difference is within 1000ms tolerance', () => {
-        const knownMtime = 1700000000000;
-        const currentMtime = 1700000000500; // 500ms diff
+describe('ConflictDetector Unit Tests', () => {
+    it('should return Overwrite when no mtime is recorded', async () => {
+        const fakeSftp = { getMtime: async () => 1700000000000 };
+        const detector = new ConflictDetector(fakeSftp);
 
-        const diff = Math.abs(currentMtime - knownMtime);
-        assert.equal(diff <= 1000, true, '500ms diff should be within tolerance');
+        const res = await detector.checkConflict(mockUri('/file.txt'), '/file.txt');
+        assert.equal(res, ConflictResolution.Overwrite);
     });
 
-    it('should detect conflict if mtime difference exceeds 1000ms', () => {
-        const knownMtime = 1700000000000;
-        const currentMtime = 1700000005000; // 5000ms diff
+    it('should return Overwrite when remote mtime is within 1000ms of known mtime', async () => {
+        const fakeSftp = { getMtime: async () => 1700000000500 }; // 500ms difference
+        const detector = new ConflictDetector(fakeSftp);
 
-        const diff = Math.abs(currentMtime - knownMtime);
-        assert.equal(diff > 1000, true, '5000ms diff should trigger conflict');
+        const uri = mockUri('/file.txt');
+        detector.recordMtime(uri, 1700000000000);
+
+        const res = await detector.checkConflict(uri, '/file.txt');
+        assert.equal(res, ConflictResolution.Overwrite);
+    });
+
+    it('should prompt user and return FetchRemote when remote mtime differs by >1000ms', async () => {
+        const fakeSftp = { getMtime: async () => 1700000005000 }; // 5000ms difference
+        let promptCalled = false;
+
+        const fakePrompter = async (_msg: string, _opt: any, ..._items: string[]) => {
+            promptCalled = true;
+            return 'Fetch Remote Version';
+        };
+
+        const detector = new ConflictDetector(fakeSftp, fakePrompter);
+        const uri = mockUri('/file.txt');
+        detector.recordMtime(uri, 1700000000000);
+
+        const res = await detector.checkConflict(uri, '/file.txt');
+        assert.equal(promptCalled, true, 'User prompt should be triggered on conflict');
+        assert.equal(res, ConflictResolution.FetchRemote);
+    });
+
+    it('should return Cancel when user cancels conflict prompt', async () => {
+        const fakeSftp = { getMtime: async () => 1700000005000 };
+        const fakePrompter = async () => 'Cancel';
+
+        const detector = new ConflictDetector(fakeSftp, fakePrompter);
+        const uri = mockUri('/file.txt');
+        detector.recordMtime(uri, 1700000000000);
+
+        const res = await detector.checkConflict(uri, '/file.txt');
+        assert.equal(res, ConflictResolution.Cancel);
     });
 });

@@ -2,17 +2,28 @@ import * as vscode from 'vscode';
 import { SftpClient } from '../fs/sftpClient.js';
 import { Logger } from '../ui/outputChannel.js';
 
-export enum ConflictResolution {
-    Overwrite = 'overwrite',
-    FetchRemote = 'fetchRemote',
-    Cancel = 'cancel',
-}
+export const ConflictResolution = {
+    Overwrite: 'overwrite',
+    FetchRemote: 'fetchRemote',
+    Cancel: 'cancel',
+} as const;
+
+export type ConflictResolution = typeof ConflictResolution[keyof typeof ConflictResolution];
+
+export type WarningPrompter = (
+    message: string,
+    options: { modal: boolean },
+    ...items: string[]
+) => Promise<string | undefined>;
 
 export class ConflictDetector {
     private knownMtimes = new Map<string, number>();
     private logger = Logger.getInstance();
 
-    constructor(private readonly sftpClient: SftpClient) {}
+    constructor(
+        private readonly sftpClient: Pick<SftpClient, 'getMtime'>,
+        private readonly prompter?: WarningPrompter
+    ) {}
 
     recordMtime(uri: vscode.Uri, mtime: number): void {
         this.knownMtimes.set(uri.toString(), mtime);
@@ -38,13 +49,16 @@ export class ConflictDetector {
                 `remote mtime=${new Date(currentMtime).toISOString()}`
             );
 
-            const choice = await vscode.window.showWarningMessage(
-                `"${remotePath}" has been modified on the server since you last opened it.`,
-                { modal: true },
-                'Overwrite Remote',
-                'Fetch Remote Version',
-                'Cancel'
-            );
+            const showWarning = this.prompter ?? vscode?.window?.showWarningMessage;
+            const choice = showWarning
+                ? await showWarning(
+                    `"${remotePath}" has been modified on the server since you last opened it.`,
+                    { modal: true },
+                    'Overwrite Remote',
+                    'Fetch Remote Version',
+                    'Cancel'
+                  )
+                : 'Overwrite Remote';
 
             switch (choice) {
                 case 'Overwrite Remote':
