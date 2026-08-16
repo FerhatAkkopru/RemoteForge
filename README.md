@@ -62,6 +62,12 @@ VS Code Explorer ──> RemoteFileSystemProvider ──> Smart Stat Cache ─�
 | `RemoteForge: Push Pending Changes` | Flushes queued local modifications to remote server (Manual Mode). |
 | `RemoteForge: Show Log` | Focuses the extension's dedicated log channel in Output view. |
 
+## ⚠️ Known Limitations
+
+- **Large File Streaming:** Files are currently buffered into memory during read/write operations. Extremely large files (>100MB) may cause memory spikes.
+- **Local Git Integration:** VS Code's native Git extension inspects the local filesystem; remote Git operations should be executed via the integrated SSH terminal (`RemoteForge: Open SSH Terminal`).
+- **Workspace Search:** Full-text workspace search relies on local filesystem indexing; remote search across millions of files is constrained by network latency.
+
 ---
 
 <a name="remoteforge-türkçe"></a>
@@ -121,6 +127,12 @@ VS Code Explorer ──> RemoteFileSystemProvider ──> Smart Stat Cache ─�
 | `RemoteForge: Delete Server Profile` | Kayıtlı profili ve şifreleri sistemden siler. |
 | `RemoteForge: Push Pending Changes` | Manuel senkronizasyon modunda bekleyen değişiklikleri sunucuya atar. |
 | `RemoteForge: Show Log` | Detaylı işlem ve hata log panelini açar. |
+
+## ⚠️ Bilinen Sınırlandırmalar
+
+- **Büyük Dosya Yönetimi:** Dosya okuma/yazma işlemleri veriyi bellek üzerinde önbellekler. Çok büyük dosyalar (>100MB) RAM kullanımını artırabilir.
+- **Yerel Git Entegrasyonu:** VS Code'un yerleşik Git eklentisi yerel dosya sistemini tarar; uzak sunucu üzerindeki Git komutları entegre SSH terminali (`RemoteForge: Open SSH Terminal`) üzerinden çalıştırılmalıdır.
+- **Tüm Workspace İçi Arama:** Proje genelinde kelime araması ağ gecikmesine bağlıdır; devasa projelerde sunucu tarafı arama için SSH terminali kullanılması önerilir.
 
 ---
 
