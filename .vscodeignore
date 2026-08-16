@@ -1,5 +1,6 @@
 .vscode/**
 src/**
+test/**
 tsconfig.json
 esbuild.js
 PROJECT_STATUS.md
