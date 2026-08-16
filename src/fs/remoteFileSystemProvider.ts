@@ -59,7 +59,24 @@ export class RemoteFileSystemProvider implements vscode.FileSystemProvider {
 
     async readFile(uri: vscode.Uri): Promise<Uint8Array> {
         const remotePath = uri.path;
+        const LARGE_FILE_THRESHOLD_BYTES = 50 * 1024 * 1024; // 50MB
+
         try {
+            // Check file size before loading into memory
+            const stat = await this.sftpClient.stat(remotePath);
+            if (stat.size > LARGE_FILE_THRESHOLD_BYTES) {
+                const sizeMB = (stat.size / (1024 * 1024)).toFixed(1);
+                const choice = await vscode.window.showWarningMessage(
+                    `File "${remotePath}" is large (${sizeMB} MB). Opening large files in memory may affect performance. Do you want to proceed?`,
+                    { modal: true },
+                    'Open File',
+                    'Cancel'
+                );
+                if (choice !== 'Open File') {
+                    throw vscode.FileSystemError.Unavailable(`Opening of large file (${sizeMB} MB) cancelled by user.`);
+                }
+            }
+
             const content = await this.sftpClient.readFile(remotePath);
             // Record mtime after reading for conflict detection
             try {
@@ -68,6 +85,9 @@ export class RemoteFileSystemProvider implements vscode.FileSystemProvider {
             } catch { /* non-critical */ }
             return content;
         } catch (err) {
+            if (err instanceof vscode.FileSystemError) {
+                throw err;
+            }
             if (!this.isNotFoundError(err)) {
                 this.logger.error(`readFile failed for ${remotePath}`, err);
             }

@@ -7,6 +7,9 @@ export const window = {
         show: () => {},
         dispose: () => {},
     }),
+    withProgress: async (_options: any, task: (progress: any) => Promise<any>) => {
+        return task({ report: () => {} });
+    },
 };
 
 export class Uri {
@@ -16,4 +19,42 @@ export class Uri {
     static file(str: string) {
         return { toString: () => str, scheme: 'file', path: str };
     }
+}
+
+export class EventEmitter<T = any> {
+    private listeners: ((e: T) => void)[] = [];
+    event = (listener: (e: T) => void) => {
+        this.listeners.push(listener);
+        return { dispose: () => {} };
+    };
+    fire(data: T) {
+        this.listeners.forEach((l) => l(data));
+    }
+    dispose() {}
+}
+
+export const workspace = {
+    configStore: new Map<string, any>(),
+    getConfiguration: (_section?: string) => ({
+        get: <T>(key: string, defaultValue: T): T => {
+            return workspace.configStore.has(key) ? workspace.configStore.get(key) : defaultValue;
+        },
+    }),
+};
+
+export const ProgressLocation = {
+    Notification: 15,
+};
+
+export const FileType = {
+    Unknown: 0,
+    File: 1,
+    Directory: 2,
+    SymbolicLink: 64,
+};
+
+export class FileSystemError extends Error {
+    static FileNotFound(message?: any) { return new FileSystemError(String(message)); }
+    static FileExists(message?: any) { return new FileSystemError(String(message)); }
+    static Unavailable(message?: any) { return new FileSystemError(String(message)); }
 }

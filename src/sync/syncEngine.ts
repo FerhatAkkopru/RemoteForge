@@ -26,6 +26,10 @@ export class SyncEngine {
         return this.pendingChanges.size;
     }
 
+    isPending(uri: vscode.Uri): boolean {
+        return this.pendingChanges.has(uri.toString());
+    }
+
     getSyncMode(): 'auto' | 'manual' {
         return vscode.workspace.getConfiguration('remoteforge').get<'auto' | 'manual'>('syncMode', 'auto');
     }

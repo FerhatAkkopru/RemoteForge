@@ -78,7 +78,7 @@ export class HostKeyStore {
         const shortFp = fp.substring(0, 16) + '...';
         const choice = await vscode.window.showWarningMessage(
             `RemoteForge: The authenticity of host "${host}:${port}" can't be established.\n` +
-            `${algorithm} key fingerprint is SHA256:${shortFp}\n` +
+            `SSH Host Key Fingerprint is SHA256:${shortFp}\n` +
             `Are you sure you want to continue connecting?`,
             { modal: true },
             'Yes, Trust This Host',

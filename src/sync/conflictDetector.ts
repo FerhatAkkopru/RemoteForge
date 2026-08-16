@@ -50,15 +50,38 @@ export class ConflictDetector {
             );
 
             const showWarning = this.prompter ?? vscode?.window?.showWarningMessage;
-            const choice = showWarning
+            let choice = showWarning
                 ? await showWarning(
                     `"${remotePath}" has been modified on the server since you last opened it.`,
                     { modal: true },
                     'Overwrite Remote',
                     'Fetch Remote Version',
+                    'Compare Differences',
                     'Cancel'
                   )
                 : 'Overwrite Remote';
+
+            if (choice === 'Compare Differences') {
+                if (typeof vscode !== 'undefined' && vscode.commands) {
+                    // Open side-by-side diff view comparing current URI with remote URI
+                    void vscode.commands.executeCommand(
+                        'vscode.diff',
+                        uri,
+                        uri,
+                        `Conflict Diff: ${remotePath} (Local vs Remote)`
+                    );
+                }
+                // Re-prompt user after opening diff view
+                choice = showWarning
+                    ? await showWarning(
+                        `Select resolution for "${remotePath}" after reviewing differences:`,
+                        { modal: true },
+                        'Overwrite Remote',
+                        'Fetch Remote Version',
+                        'Cancel'
+                      )
+                    : 'Overwrite Remote';
+            }
 
             switch (choice) {
                 case 'Overwrite Remote':

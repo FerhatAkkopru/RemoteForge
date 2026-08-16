@@ -8,6 +8,7 @@ import { SyncEngine } from './sync/syncEngine.js';
 import { ConflictDetector } from './sync/conflictDetector.js';
 import { Logger } from './ui/outputChannel.js';
 import { StatusBar } from './ui/statusBar.js';
+import { RemoteFileDecorationProvider } from './ui/fileDecoration.js';
 import { showAddProfileDialog, showProfilePicker } from './ui/quickPick.js';
 import { SshTerminalProvider } from './terminal/sshTerminal.js';
 
@@ -27,6 +28,10 @@ export function activate(context: vscode.ExtensionContext) {
 
     // --- UI ---
     const statusBar = new StatusBar();
+    const fileDecorationProvider = new RemoteFileDecorationProvider(syncEngine);
+    context.subscriptions.push(
+        vscode.window.registerFileDecorationProvider(fileDecorationProvider)
+    );
 
     // Wire status bar to connection state changes
     connectionManager.onStateChange((state) => {
