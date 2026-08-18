@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { SftpClient } from './sftpClient.js';
-import { SyncEngine } from '../sync/syncEngine.js';
+import { SyncEngine, PendingChange } from '../sync/syncEngine.js';
 import { ConflictDetector } from '../sync/conflictDetector.js';
 import { Logger } from '../ui/outputChannel.js';
 
