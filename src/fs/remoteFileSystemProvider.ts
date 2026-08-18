@@ -22,11 +22,25 @@ export class RemoteFileSystemProvider implements vscode.FileSystemProvider {
         private readonly sftpClient: SftpClient,
         private readonly syncEngine: SyncEngine,
         private readonly conflictDetector: ConflictDetector,
-    ) {}
+    ) {
+        this.syncEngine.onDidPersist((uri) => {
+            this.fireSoon({ type: vscode.FileChangeType.Changed, uri });
+        });
+    }
 
     // --- File metadata ---
 
     async stat(uri: vscode.Uri): Promise<vscode.FileStat> {
+        const pending = this.syncEngine.getPendingChange(uri);
+        if (pending) {
+            return {
+                type: vscode.FileType.File,
+                ctime: pending.timestamp,
+                mtime: pending.timestamp,
+                size: pending.content.byteLength,
+            };
+        }
+
         const remotePath = uri.path;
         try {
             const stat = await this.sftpClient.stat(remotePath);
@@ -45,19 +59,44 @@ export class RemoteFileSystemProvider implements vscode.FileSystemProvider {
 
     async readDirectory(uri: vscode.Uri): Promise<[string, vscode.FileType][]> {
         const remotePath = uri.path;
+        let entries: [string, vscode.FileType][] = [];
+        let sftpFailed = false;
+
         try {
-            return await this.sftpClient.readDirectory(remotePath);
+            entries = await this.sftpClient.readDirectory(remotePath);
         } catch (err) {
+            sftpFailed = true;
             if (!this.isNotFoundError(err)) {
                 this.logger.error(`readDirectory failed for ${remotePath}`, err);
             }
+        }
+
+        const pendingChildren = this.syncEngine.getPendingChildren(uri);
+        if (pendingChildren.length > 0) {
+            const existingNames = new Set(entries.map(([name]) => name));
+            for (const child of pendingChildren) {
+                if (!existingNames.has(child.name)) {
+                    entries.push([child.name, child.type]);
+                }
+            }
+            return entries;
+        }
+
+        if (sftpFailed) {
             throw vscode.FileSystemError.FileNotFound(uri);
         }
+
+        return entries;
     }
 
     // --- File read/write ---
 
     async readFile(uri: vscode.Uri): Promise<Uint8Array> {
+        const pending = this.syncEngine.getPendingChange(uri);
+        if (pending) {
+            return pending.content;
+        }
+
         const remotePath = uri.path;
         const LARGE_FILE_THRESHOLD_BYTES = 50 * 1024 * 1024; // 50MB
 
@@ -102,31 +141,31 @@ export class RemoteFileSystemProvider implements vscode.FileSystemProvider {
     ): Promise<void> {
         const remotePath = uri.path;
 
-        // Check if file exists when overwrite is not allowed
-        if (!options.overwrite) {
+        const isPending = this.syncEngine.isPending(uri);
+        let existsOnServer = false;
+        if (!isPending) {
             try {
                 await this.sftpClient.stat(remotePath);
-                // File exists but overwrite is false
-                throw vscode.FileSystemError.FileExists(uri);
-            } catch (err) {
-                if (err instanceof vscode.FileSystemError) { throw err; }
-                // File doesn't exist — good, proceed to create
+                existsOnServer = true;
+            } catch {
+                existsOnServer = false;
             }
         }
 
-        if (!options.create) {
-            try {
-                await this.sftpClient.stat(remotePath);
-            } catch {
-                throw vscode.FileSystemError.FileNotFound(uri);
-            }
+        const exists = isPending || existsOnServer;
+
+        if (!options.overwrite && exists) {
+            throw vscode.FileSystemError.FileExists(uri);
+        }
+
+        if (!options.create && !exists) {
+            throw vscode.FileSystemError.FileNotFound(uri);
         }
 
         try {
-            const written = await this.syncEngine.handleWrite(uri, remotePath, content);
-            if (written) {
-                this.fireSoon({ type: vscode.FileChangeType.Changed, uri });
-            }
+            await this.syncEngine.handleWrite(uri, remotePath, content);
+            // Note: FileChangeType.Changed is NOT fired here for manual mode queueing.
+            // It will be fired via syncEngine.onDidPersist when actual remote write finishes.
         } catch (err) {
             this.logger.error(`writeFile failed for ${remotePath}`, err);
             throw vscode.FileSystemError.Unavailable(uri);
@@ -148,6 +187,14 @@ export class RemoteFileSystemProvider implements vscode.FileSystemProvider {
 
     async delete(uri: vscode.Uri, options: { recursive: boolean }): Promise<void> {
         const remotePath = uri.path;
+        let hadPending = false;
+
+        if (options.recursive) {
+            hadPending = this.syncEngine.discardPendingSubtree(uri) > 0;
+        } else {
+            hadPending = this.syncEngine.discardPending(uri);
+        }
+
         try {
             if (options.recursive) {
                 await this.deleteRecursive(remotePath);
@@ -155,12 +202,17 @@ export class RemoteFileSystemProvider implements vscode.FileSystemProvider {
                 const stat = await this.sftpClient.stat(remotePath);
                 await this.sftpClient.delete(remotePath, stat.type === vscode.FileType.Directory);
             }
-            this.conflictDetector.clearMtime(uri);
-            this.fireSoon({ type: vscode.FileChangeType.Deleted, uri });
         } catch (err) {
-            this.logger.error(`delete failed for ${remotePath}`, err);
-            throw vscode.FileSystemError.Unavailable(uri);
+            if (this.isNotFoundError(err) && hadPending) {
+                this.logger.info(`Deleted pending item not present on server: ${remotePath}`);
+            } else {
+                this.logger.error(`delete failed for ${remotePath}`, err);
+                throw vscode.FileSystemError.Unavailable(uri);
+            }
         }
+
+        this.conflictDetector.clearMtime(uri);
+        this.fireSoon({ type: vscode.FileChangeType.Deleted, uri });
     }
 
     async rename(
@@ -168,27 +220,40 @@ export class RemoteFileSystemProvider implements vscode.FileSystemProvider {
         newUri: vscode.Uri,
         options: { overwrite: boolean }
     ): Promise<void> {
-        if (!options.overwrite) {
+        const targetPending = this.syncEngine.isPending(newUri);
+        let targetExistsOnServer = false;
+        if (!targetPending) {
             try {
                 await this.sftpClient.stat(newUri.path);
-                throw vscode.FileSystemError.FileExists(newUri);
-            } catch (err) {
-                if (err instanceof vscode.FileSystemError) { throw err; }
-                // Doesn't exist — proceed
+                targetExistsOnServer = true;
+            } catch {
+                targetExistsOnServer = false;
             }
         }
+        const targetExists = targetPending || targetExistsOnServer;
+
+        if (!options.overwrite && targetExists) {
+            throw vscode.FileSystemError.FileExists(newUri);
+        }
+
+        const hadPending = this.syncEngine.renamePending(oldUri, newUri);
 
         try {
             await this.sftpClient.rename(oldUri.path, newUri.path);
-            this.conflictDetector.clearMtime(oldUri);
-            this.fireSoon(
-                { type: vscode.FileChangeType.Deleted, uri: oldUri },
-                { type: vscode.FileChangeType.Created, uri: newUri }
-            );
         } catch (err) {
-            this.logger.error(`rename failed: ${oldUri.path} → ${newUri.path}`, err);
-            throw vscode.FileSystemError.Unavailable(oldUri);
+            if (this.isNotFoundError(err) && hadPending) {
+                this.logger.info(`Renamed pending item not present on server: ${oldUri.path} -> ${newUri.path}`);
+            } else {
+                this.logger.error(`rename failed: ${oldUri.path} → ${newUri.path}`, err);
+                throw vscode.FileSystemError.Unavailable(oldUri);
+            }
         }
+
+        this.conflictDetector.clearMtime(oldUri);
+        this.fireSoon(
+            { type: vscode.FileChangeType.Deleted, uri: oldUri },
+            { type: vscode.FileChangeType.Created, uri: newUri }
+        );
     }
 
     // --- File watching (no-op for remote, but required by interface) ---

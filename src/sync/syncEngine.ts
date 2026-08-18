@@ -17,6 +17,9 @@ export class SyncEngine {
     private readonly _onPendingCountChange = new vscode.EventEmitter<number>();
     readonly onPendingCountChange = this._onPendingCountChange.event;
 
+    private readonly _onDidPersist = new vscode.EventEmitter<vscode.Uri>();
+    readonly onDidPersist = this._onDidPersist.event;
+
     constructor(
         private readonly sftpClient: SftpClient,
         private readonly conflictDetector: ConflictDetector,
@@ -28,6 +31,94 @@ export class SyncEngine {
 
     isPending(uri: vscode.Uri): boolean {
         return this.pendingChanges.has(uri.toString());
+    }
+
+    getPendingChange(uri: vscode.Uri): PendingChange | undefined {
+        return this.pendingChanges.get(uri.toString());
+    }
+
+    getPendingChildren(dirUri: vscode.Uri): { name: string; type: vscode.FileType }[] {
+        const results: { name: string; type: vscode.FileType }[] = [];
+        const dirPath = dirUri.path.endsWith('/') ? dirUri.path : `${dirUri.path}/`;
+
+        for (const change of this.pendingChanges.values()) {
+            const path = change.remotePath;
+            if (path.startsWith(dirPath)) {
+                const relative = path.slice(dirPath.length);
+                const firstSlash = relative.indexOf('/');
+                const childName = firstSlash === -1 ? relative : relative.slice(0, firstSlash);
+                if (childName && !results.some((r) => r.name === childName)) {
+                    results.push({
+                        name: childName,
+                        type: firstSlash === -1 ? vscode.FileType.File : vscode.FileType.Directory,
+                    });
+                }
+            }
+        }
+        return results;
+    }
+
+    discardPending(uri: vscode.Uri): boolean {
+        const deleted = this.pendingChanges.delete(uri.toString());
+        if (deleted) {
+            this._onPendingCountChange.fire(this.pendingChanges.size);
+        }
+        return deleted;
+    }
+
+    discardPendingSubtree(dirUri: vscode.Uri): number {
+        const dirPath = dirUri.path.endsWith('/') ? dirUri.path : `${dirUri.path}/`;
+        let count = 0;
+        for (const [key, change] of Array.from(this.pendingChanges.entries())) {
+            if (change.remotePath === dirUri.path || change.remotePath.startsWith(dirPath)) {
+                this.pendingChanges.delete(key);
+                count++;
+            }
+        }
+        if (count > 0) {
+            this._onPendingCountChange.fire(this.pendingChanges.size);
+        }
+        return count;
+    }
+
+    renamePending(oldUri: vscode.Uri, newUri: vscode.Uri): boolean {
+        let changed = false;
+        const oldKey = oldUri.toString();
+        if (this.pendingChanges.has(oldKey)) {
+            const item = this.pendingChanges.get(oldKey)!;
+            this.pendingChanges.delete(oldKey);
+            this.pendingChanges.set(newUri.toString(), {
+                ...item,
+                uri: newUri,
+                remotePath: newUri.path,
+            });
+            changed = true;
+        }
+
+        const oldDirPath = oldUri.path.endsWith('/') ? oldUri.path : `${oldUri.path}/`;
+        const newDirPath = newUri.path.endsWith('/') ? newUri.path : `${newUri.path}/`;
+
+        for (const [key, item] of Array.from(this.pendingChanges.entries())) {
+            if (item.remotePath.startsWith(oldDirPath)) {
+                const relPath = item.remotePath.slice(oldDirPath.length);
+                const newRemotePath = newDirPath + relPath;
+                const updatedUri = vscode.Uri.parse(
+                    `${oldUri.scheme}://${oldUri.authority}${newRemotePath}`
+                );
+                this.pendingChanges.delete(key);
+                this.pendingChanges.set(updatedUri.toString(), {
+                    ...item,
+                    uri: updatedUri,
+                    remotePath: newRemotePath,
+                });
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            this._onPendingCountChange.fire(this.pendingChanges.size);
+        }
+        return changed;
     }
 
     getSyncMode(): 'auto' | 'manual' {
@@ -75,6 +166,7 @@ export class SyncEngine {
                     const newMtime = await this.sftpClient.getMtime(remotePath);
                     this.conflictDetector.recordMtime(uri, newMtime);
                 } catch { /* mtime update failure is non-critical */ }
+                this._onDidPersist.fire(uri);
                 return true;
 
             case ConflictResolution.FetchRemote:
@@ -143,5 +235,6 @@ export class SyncEngine {
     dispose(): void {
         this.pendingChanges.clear();
         this._onPendingCountChange.dispose();
+        this._onDidPersist.dispose();
     }
 }

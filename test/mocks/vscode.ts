@@ -61,6 +61,12 @@ export const FileType = {
     SymbolicLink: 64,
 };
 
+export const FileChangeType = {
+    Changed: 1,
+    Created: 2,
+    Deleted: 3,
+};
+
 export class FileSystemError extends Error {
     static FileNotFound(message?: any) { return new FileSystemError(String(message)); }
     static FileExists(message?: any) { return new FileSystemError(String(message)); }
