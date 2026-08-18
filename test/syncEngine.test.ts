@@ -103,12 +103,12 @@ describe('SyncEngine Unit Tests', () => {
         assert.equal(syncEngine.pendingCount, 3);
 
         const discardedSingle = syncEngine.discardPending(uri3);
-        assert.equal(discardedSingle, true);
+        assert.equal(discardedSingle !== undefined, true);
         assert.equal(syncEngine.pendingCount, 2);
 
         const dirUri = mockUri('/dir');
-        const count = syncEngine.discardPendingSubtree(dirUri);
-        assert.equal(count, 2);
+        const removedMap = syncEngine.discardPendingSubtree(dirUri);
+        assert.equal(removedMap.size, 2);
         assert.equal(syncEngine.pendingCount, 0);
     });
 

@@ -3,7 +3,7 @@ import { SftpClient } from '../fs/sftpClient.js';
 import { ConflictDetector, ConflictResolution } from './conflictDetector.js';
 import { Logger } from '../ui/outputChannel.js';
 
-interface PendingChange {
+export interface PendingChange {
     uri: vscode.Uri;
     remotePath: string;
     content: Uint8Array;
@@ -58,27 +58,42 @@ export class SyncEngine {
         return results;
     }
 
-    discardPending(uri: vscode.Uri): boolean {
-        const deleted = this.pendingChanges.delete(uri.toString());
-        if (deleted) {
+    discardPending(uri: vscode.Uri): PendingChange | undefined {
+        const key = uri.toString();
+        const item = this.pendingChanges.get(key);
+        if (item) {
+            this.pendingChanges.delete(key);
             this._onPendingCountChange.fire(this.pendingChanges.size);
         }
-        return deleted;
+        return item;
     }
 
-    discardPendingSubtree(dirUri: vscode.Uri): number {
+    restorePending(item: PendingChange): void {
+        this.pendingChanges.set(item.uri.toString(), item);
+        this._onPendingCountChange.fire(this.pendingChanges.size);
+    }
+
+    discardPendingSubtree(dirUri: vscode.Uri): Map<string, PendingChange> {
         const dirPath = dirUri.path.endsWith('/') ? dirUri.path : `${dirUri.path}/`;
-        let count = 0;
+        const removed = new Map<string, PendingChange>();
         for (const [key, change] of Array.from(this.pendingChanges.entries())) {
             if (change.remotePath === dirUri.path || change.remotePath.startsWith(dirPath)) {
+                removed.set(key, change);
                 this.pendingChanges.delete(key);
-                count++;
             }
         }
-        if (count > 0) {
+        if (removed.size > 0) {
             this._onPendingCountChange.fire(this.pendingChanges.size);
         }
-        return count;
+        return removed;
+    }
+
+    restorePendingMap(map: Map<string, PendingChange>): void {
+        if (map.size === 0) return;
+        for (const [key, item] of map.entries()) {
+            this.pendingChanges.set(key, item);
+        }
+        this._onPendingCountChange.fire(this.pendingChanges.size);
     }
 
     renamePending(oldUri: vscode.Uri, newUri: vscode.Uri): boolean {

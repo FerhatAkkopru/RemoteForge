@@ -60,14 +60,15 @@ export class RemoteFileSystemProvider implements vscode.FileSystemProvider {
     async readDirectory(uri: vscode.Uri): Promise<[string, vscode.FileType][]> {
         const remotePath = uri.path;
         let entries: [string, vscode.FileType][] = [];
-        let sftpFailed = false;
+        let sftpError: unknown = undefined;
 
         try {
             entries = await this.sftpClient.readDirectory(remotePath);
         } catch (err) {
-            sftpFailed = true;
+            sftpError = err;
             if (!this.isNotFoundError(err)) {
                 this.logger.error(`readDirectory failed for ${remotePath}`, err);
+                throw vscode.FileSystemError.Unavailable(uri);
             }
         }
 
@@ -82,7 +83,7 @@ export class RemoteFileSystemProvider implements vscode.FileSystemProvider {
             return entries;
         }
 
-        if (sftpFailed) {
+        if (sftpError) {
             throw vscode.FileSystemError.FileNotFound(uri);
         }
 
@@ -187,13 +188,16 @@ export class RemoteFileSystemProvider implements vscode.FileSystemProvider {
 
     async delete(uri: vscode.Uri, options: { recursive: boolean }): Promise<void> {
         const remotePath = uri.path;
-        let hadPending = false;
+        let savedSingle: PendingChange | undefined;
+        let savedSubtree: Map<string, PendingChange> | undefined;
 
         if (options.recursive) {
-            hadPending = this.syncEngine.discardPendingSubtree(uri) > 0;
+            savedSubtree = this.syncEngine.discardPendingSubtree(uri);
         } else {
-            hadPending = this.syncEngine.discardPending(uri);
+            savedSingle = this.syncEngine.discardPending(uri);
         }
+
+        const hadPending = options.recursive ? (savedSubtree?.size ?? 0) > 0 : savedSingle !== undefined;
 
         try {
             if (options.recursive) {
@@ -206,6 +210,12 @@ export class RemoteFileSystemProvider implements vscode.FileSystemProvider {
             if (this.isNotFoundError(err) && hadPending) {
                 this.logger.info(`Deleted pending item not present on server: ${remotePath}`);
             } else {
+                // Rollback pending changes if deletion failed on server due to permission/network error
+                if (options.recursive && savedSubtree) {
+                    this.syncEngine.restorePendingMap(savedSubtree);
+                } else if (savedSingle) {
+                    this.syncEngine.restorePending(savedSingle);
+                }
                 this.logger.error(`delete failed for ${remotePath}`, err);
                 throw vscode.FileSystemError.Unavailable(uri);
             }
@@ -244,6 +254,10 @@ export class RemoteFileSystemProvider implements vscode.FileSystemProvider {
             if (this.isNotFoundError(err) && hadPending) {
                 this.logger.info(`Renamed pending item not present on server: ${oldUri.path} -> ${newUri.path}`);
             } else {
+                // Rollback pending rename if server rename fails
+                if (hadPending) {
+                    this.syncEngine.renamePending(newUri, oldUri);
+                }
                 this.logger.error(`rename failed: ${oldUri.path} → ${newUri.path}`, err);
                 throw vscode.FileSystemError.Unavailable(oldUri);
             }

@@ -217,4 +217,70 @@ describe('RemoteFileSystemProvider Unit Tests (Manual Sync Architecture)', () =>
         assert.equal(serverFiles.has('/new_remote.txt'), true);
         assert.deepEqual(serverFiles.get('/new_remote.txt'), editContent);
     });
+
+    it('Point 1: delete() should ROLL BACK pending changes if server delete fails with network/permission error', async () => {
+        workspace.configStore.set('syncMode', 'manual');
+
+        serverFiles.set('/protected.txt', new TextEncoder().encode('Protected Content'));
+        const uri = mockUri('/protected.txt');
+
+        // Queue edit
+        await provider.writeFile(uri, new TextEncoder().encode('New Edit'), { create: false, overwrite: true });
+        assert.equal(syncEngine.pendingCount, 1);
+
+        // Make fakeSftp throw a permission error on delete
+        fakeSftp.delete = async () => {
+            throw new Error('Permission denied (SSH_FX_PERMISSION_DENIED)');
+        };
+
+        await assert.rejects(async () => {
+            await provider.delete(uri, { recursive: false });
+        });
+
+        // Pending change MUST be restored!
+        assert.equal(syncEngine.pendingCount, 1, 'Pending change should be restored via rollback');
+        assert.equal(syncEngine.isPending(uri), true);
+    });
+
+    it('Point 1: rename() should ROLL BACK pending rename if server rename fails', async () => {
+        workspace.configStore.set('syncMode', 'manual');
+
+        serverFiles.set('/locked.txt', new TextEncoder().encode('Locked Content'));
+        const oldUri = mockUri('/locked.txt');
+        const newUri = mockUri('/locked_renamed.txt');
+
+        await provider.writeFile(oldUri, new TextEncoder().encode('Pending Rename Content'), { create: false, overwrite: true });
+        assert.equal(syncEngine.isPending(oldUri), true);
+
+        // Make fakeSftp throw on rename
+        fakeSftp.rename = async () => {
+            throw new Error('Permission denied');
+        };
+
+        await assert.rejects(async () => {
+            await provider.rename(oldUri, newUri, { overwrite: true });
+        });
+
+        // Pending change MUST be rolled back to oldUri!
+        assert.equal(syncEngine.isPending(oldUri), true, 'Old URI pending state restored');
+        assert.equal(syncEngine.isPending(newUri), false, 'New URI pending state reverted');
+    });
+
+    it('Point 2: readDirectory() should NOT silence permission/network errors when pending files exist', async () => {
+        workspace.configStore.set('syncMode', 'manual');
+
+        const pendingUri = mockUri('/secret_dir/pending.txt');
+        await provider.writeFile(pendingUri, new TextEncoder().encode('Local Only'), { create: true, overwrite: true });
+        assert.equal(syncEngine.pendingCount, 1);
+
+        // Make readDirectory fail with Permission Denied
+        fakeSftp.readDirectory = async () => {
+            throw new Error('Permission denied (SSH_FX_PERMISSION_DENIED)');
+        };
+
+        const dirUri = mockUri('/secret_dir');
+        await assert.rejects(async () => {
+            await provider.readDirectory(dirUri);
+        });
+    });
 });
